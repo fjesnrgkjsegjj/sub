@@ -145,6 +145,16 @@ The repository is equally **Render-ready**: a `render.yaml` Blueprint at the pro
 
 The Node.js version is pinned to `22.14.0` via the `NODE_VERSION` variable and the `.node-version` file. Note that on the Render **free plan** the service sleeps after ~15 minutes of inactivity and the first request afterwards takes a little longer while it wakes up; upgrade the plan in the dashboard to avoid cold starts.
 
+**Troubleshooting — blank (white) page after deploy:** a white page means the browser got an `index.html` that is not the production build. The server now protects you from the two classic causes: (1) the **Build Command** never ran `npm run build`, so `dist/` is missing — the server then returns a clear **503 guide page** (in Persian and English) on web routes while `/api/health` stays green, instead of silently serving the repository; and (2) misconfigured commands that run the app from TypeScript source. Verify these exact dashboard values and redeploy:
+
+| Field | Required value |
+|---|---|
+| Build Command | `npm ci && npm run build` |
+| Start Command | `node dist/server.cjs` |
+| Health Check Path | `/api/health` |
+
+Never set `NODE_ENV` manually, and never use `npm run dev` / `tsx server.ts` as a Start Command — those are local-development only. You can also check the `/api/health` response: `"static":"build"` means the built frontend is being served, `"static":"missing"` means the build output is absent. As an extra hardening, the server no longer serves the repository root, so source files such as `server.ts` or `package-lock.json` can never leak through the web server.
+
 ### Network access and privacy
 
 API calls are sent by the application server. For a hosted deployment, the server must reach the selected provider; for local development, your local Node.js process must reach it. Proxy/VPN requirements depend on routing and provider restrictions: the hosted demo does not guarantee access in every region. Use services available to you under their terms; multiple keys do not remove provider quotas.
@@ -292,6 +302,16 @@ npm start
 
 نسخهٔ Node.js با متغیر `NODE_VERSION` و فایل `.node-version` روی `22.14.0` پین شده است. توجه: در پلن رایگان Render سرویس بعد از حدود ۱۵ دقیقه بی‌کاری به خواب می‌رود و اولین درخواست بعد از آن کمی کندتر است؛ برای حذف cold start پلن را در داشبورد ارتقا دهید.
 
+**عیب‌یابی — صفحهٔ سفید بعد از دیپلوی:** صفحهٔ سفید یعنی مرورگر یک `index.html` غیر از بیلد پروداکشن گرفته است. سرور اکنون در برابر دو علتِ کلاسیک محافظت می‌شود: (۱) دستور **Build** هیچ‌وقت `npm run build` را اجرا نکرده و پوشهٔ `dist` وجود ندارد — در این حالت سرور روی مسیرهای وب یک **صفحهٔ راهنمای ۵۰۳** (فارسی/انگلیسی) برمی‌گرداند و `/api/health` سبز می‌ماند، به‌جای آن‌که بی‌صدا ریشهٔ مخزن را سرو کند؛ و (۲) دستورهای اشتباهی که برنامه را از سورس TypeScript اجرا می‌کنند. این مقادیر دقیق را در داشبورد بررسی و دوباره Deploy کنید:
+
+| فیلد | مقدار الزامی |
+|---|---|
+| Build Command | `npm ci && npm run build` |
+| Start Command | `node dist/server.cjs` |
+| Health Check Path | `/api/health` |
+
+هرگز `NODE_ENV` را دستی تنظیم نکنید و هرگز `npm run dev` یا `tsx server.ts` را به‌عنوان Start Command استفاده نکنید — این‌ها فقط برای توسعهٔ محلی‌اند. پاسخ `/api/health` هم راهنمای تشخیص است: `"static":"build"` یعنی فرانت‌اند بیلدشده سرو می‌شود و `"static":"missing"` یعنی خروجی بیلد روی سرور نیست. به‌عنوان سخت‌سازی امنیتی، سرور دیگر ریشهٔ مخزن را سرو نمی‌کند؛ بنابراین فایل‌هایی مثل `server.ts` یا `package-lock.json` هرگز از طریق وب لو نمی‌روند.
+
 ### شبکه و حریم خصوصی
 
 درخواست‌های API از سمت سرور برنامه ارسال می‌شوند. در نسخهٔ میزبانی‌شده، سرور باید به سرویس انتخابی دسترسی داشته باشد؛ در نسخهٔ محلی، Node.js روی سیستم شما باید به آن سرویس برسد. نیاز به پراکسی یا ابزار مسیریابی به محدودیت سرویس و شبکه بستگی دارد؛ دمو آنلاین دسترسی در همهٔ مناطق را تضمین نمی‌کند. از سرویس‌ها مطابق شرایط استفادهٔ خودشان بهره ببرید؛ چند کلید سهمیهٔ ارائه‌دهنده را حذف نمی‌کند.
@@ -432,6 +452,16 @@ npm start
 5. افتح رابط `*.onrender.com` الناتج واضبط Gemini أو Custom Provider من داخل التطبيق.
 
 نسخة Node.js مثبّتة على `22.14.0` عبر متغير `NODE_VERSION` وملف `.node-version`. ملاحظة: في الخطة المجانية من Render تدخل الخدمة في وضع السكون بعد نحو 15 دقيقة من الخمول ويصبح الطلب الأول بعدها أبطأ قليلاً؛ قم بترقية الخطة لتجنب ذلك.
+
+**استكشاف الأخطاء — صفحة بيضاء بعد النشر:** الصفحة البيضاء تعني أن المتصفح استلم ملف `index.html` ليس من بناء الإنتاج. الخادم الآن محمي من السببين الكلاسيكيين: (1) أمر **البناء** لم ينفّذ `npm run build` أبداً فتكون مجلد `dist` مفقوداً — عندها يُرجع الخادم **صفحة إرشادية 503** (بالفارسية والإنجليزية) على مسارات الويب بينما يبقى `/api/health` سليماً، بدلاً من تقديم جذر المستودع بصمت؛ و(2) أوامر خاطئة تشغّل التطبيق من مصدر TypeScript مباشرة. تحقق من هذه القيم في لوحة التحكم ثم أعد النشر:
+
+| الحقل | القيمة المطلوبة |
+|---|---|
+| Build Command | `npm ci && npm run build` |
+| Start Command | `node dist/server.cjs` |
+| Health Check Path | `/api/health` |
+
+لا تضبط `NODE_ENV` يدوياً أبداً، ولا تستخدم `npm run dev` أو `tsx server.ts` كأمر تشغيل — فهي للتطوير المحلي فقط. يفيدك رد `/api/health` في التشخيص أيضاً: `"static":"build"` تعني أن الواجهة المبنية تُقدَّم، و`"static":"missing"` تعني غياب مخرجات البناء على الخادم. وكتحصين إضافي، لم يعد الخادم يقدّم جذر المستودع، لذلك لا يمكن أبداً تسريب ملفات مثل `server.ts` أو `package-lock.json` عبر الويب.
 
 ### الشبكة والخصوصية
 
