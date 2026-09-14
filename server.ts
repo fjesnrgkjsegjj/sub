@@ -27,13 +27,6 @@ const _dirname = typeof __dirname !== 'undefined'
   ? __dirname
   : process.cwd();
 
-// Runtime status of static frontend hosting, surfaced via /api/health for remote diagnosis.
-// FIX (WHITE-SCREEN INCIDENT, Render 2026-09-14): when the platform build never ran
-// (dist/ missing) the old code silently served the REPO ROOT, which returned the raw
-// dev index.html (references /src/main.tsx -> blank white page) AND exposed the entire
-// source tree (server.ts, package-lock.json, render.yaml...) via express.static.
-let PROD_STATIC_STATE: 'build' | 'missing' | 'dev' = 'dev';
-
 const app = express();
 const PORT = Number(process.env.PORT) || 3000;
 
@@ -2053,128 +2046,46 @@ app.get('/api/health', (req, res) => {
   res.json({
     status: 'ok',
     hasServerKey,
-    static: PROD_STATIC_STATE, // 'build' = serving dist/, 'missing' = build output absent, 'dev' = vite middleware
     time: new Date().toISOString()
   });
 });
 
-// Helper to reliably locate the BUILT frontend: a dist directory whose index.html is a
-// production build (loads hashed bundles from /assets/), not the dev source index.html.
-// FIX (WHITE-SCREEN + SOURCE LEAK):
-//  - The repo root (process.cwd()) is NO LONGER an acceptable candidate. Serving it
-//    statically leaks server.ts / package-lock.json / deploy configs and yields a blank
-//    page, because /src/main.tsx is only executable under the Vite dev server.
-//  - A candidate's index.html must reference /assets/ (vite build output marker); if none
-//    qualifies we return null and startServer() serves a self-explanatory 503 guide page
-//    instead of pretending everything is fine.
-function locateDistDirectory(): string | null {
+// Helper to reliably locate the dist directory with index.html
+function locateDistDirectory(): string {
   const currentDir = typeof __dirname !== 'undefined' ? __dirname : process.cwd();
   const candidates = [
-    currentDir, // canonical layout: dist/server.cjs + dist/index.html + dist/assets/
+    currentDir, // If server.cjs is in dist/, currentDir already contains index.html
     path.join(process.cwd(), 'dist'),
     path.join(currentDir, 'dist'),
     path.join(currentDir, '..', 'dist'),
-    // SECURITY: process.cwd() (repo root) deliberately removed as a candidate.
+    process.cwd(),
   ];
 
   for (const candidate of candidates) {
-    const indexPath = path.join(candidate, 'index.html');
-    if (!fs.existsSync(indexPath)) continue;
-    try {
-      const html = fs.readFileSync(indexPath, 'utf8');
-      // Built index.html -> <script src="/assets/index-XXXX.js">; dev source -> /src/main.tsx
-      if (html.includes('/assets/') && !html.includes('/src/main.tsx')) {
-        return candidate;
-      }
-    } catch {
-      /* unreadable index.html — keep searching */
+    if (fs.existsSync(path.join(candidate, 'index.html'))) {
+      return candidate;
     }
   }
 
-  return null;
-}
-
-// Bilingual (fa/en) diagnostic page returned instead of a blank screen / leaked sources
-// when the production build output (dist/index.html) is missing on the host.
-function buildMissingPage(distHint: string): string {
-  return `<!doctype html>
-<html lang="fa" dir="rtl">
-<head>
-<meta charset="utf-8"/>
-<meta name="viewport" content="width=device-width, initial-scale=1"/>
-<title>SubGame Lab — Build missing / بیلد یافت نشد</title>
-<style>
-  body{font-family:system-ui,Vazirmatn,Tahoma,sans-serif;background:#020617;color:#e2e8f0;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;padding:24px}
-  .card{max-width:760px;background:#0f172a;border:1px solid #1e293b;border-radius:16px;padding:32px;line-height:1.9}
-  h1{font-size:20px;margin:0 0 12px;color:#f87171}
-  code{background:#1e293b;border-radius:6px;padding:2px 8px;font-size:13px;color:#a5b4fc;direction:ltr;display:inline-block}
-  pre{background:#1e293b;border-radius:8px;padding:12px 16px;direction:ltr;text-align:left;overflow-x:auto;color:#a5b4fc;font-size:13px;margin:8px 0}
-  .en{direction:ltr;text-align:left;border-top:1px solid #1e293b;margin-top:20px;padding-top:16px;color:#94a3b8;font-size:14px}
-</style>
-</head>
-<body>
-<div class="card">
-  <h1>خروجی بیلد فرانت‌اند پیدا نشد</h1>
-  <p>سرور اجرا است اما پوشه‌ی <code>dist</code> (نتیجه‌ی <code>npm run build</code>) روی سرور موجود نیست (${distHint}). در پنل پلتفرم استقرار این مقادیر را تنظیم و دوباره Deploy کنید:</p>
-  <pre>Build Command:  npm ci &amp;&amp; npm run build
-Start Command:  node dist/server.cjs
-Health Check:   /api/health</pre>
-  <p>اگر از Blueprint استفاده می‌کنید، فایل <code>render.yaml</code> همین تنظیمات را به‌صورت آماده دارد.</p>
-  <div class="en"><strong>Frontend build not found.</strong> The API (<code>/api/*</code>) is healthy, but the built frontend (<code>dist/index.html</code>, produced by <code>npm run build</code>) is missing on the server (${distHint}). Set the platform <em>Build Command</em> to <code>npm ci &amp;&amp; npm run build</code> and the <em>Start Command</em> to <code>node dist/server.cjs</code>, then redeploy. For source safety the server no longer serves the repository root.</div>
-</div>
-</body>
-</html>`;
+  return path.join(process.cwd(), 'dist');
 }
 
 // Setup Vite development server or serve static assets in production
 async function startServer() {
   const isCjsBundle = typeof __filename !== 'undefined' && typeof __filename === 'string' && __filename.endsWith('.cjs');
   const isProduction = process.env.NODE_ENV === 'production' || isCjsBundle;
-  let viteServer: Awaited<ReturnType<typeof createViteServer>> | null = null;
 
   if (!isProduction) {
     console.log('[Server] Starting in DEVELOPMENT mode with Vite middleware...');
-    viteServer = await createViteServer({
+    const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: 'spa',
     });
-    app.use(viteServer.middlewares);
+    app.use(vite.middlewares);
   } else {
     const distDir = locateDistDirectory();
-
-    if (distDir) {
-      PROD_STATIC_STATE = 'build';
-      console.log(`[Server] Starting in PRODUCTION mode. Serving assets from: ${distDir}`);
-
-      // Defense-in-depth: never publish the server bundle or sourcemaps from dist/
-      // (they reveal server internals; the browser never needs them at runtime).
-      app.use((req, res, next) => {
-        if (req.path.endsWith('.map') || req.path.includes('server.cjs')) {
-          return res.status(404).json({ error: 'Not found' });
-        }
-        next();
-      });
-
-      app.use(express.static(distDir));
-    } else {
-      PROD_STATIC_STATE = 'missing';
-      // BUILD MISSING (the actual root cause of the Render white-screen incident):
-      // never fall back to serving the repo root — that leaked the whole source tree
-      // and produced a blank page. Serve an actionable bilingual guide page instead,
-      // while keeping /api/* fully functional so platform healthchecks still pass.
-      console.error(
-        '\n[Server] ==========================================================\n' +
-        '[Server]  ⚠️  Frontend build NOT found (dist/index.html).\n' +
-        '[Server]  Platform Build Command must be: npm ci && npm run build\n' +
-        '[Server]  Platform Start Command must be: node dist/server.cjs\n' +
-        '[Server]  Non-API routes will return a 503 guide page until then.\n' +
-        '[Server] ==========================================================\n'
-      );
-      app.use((req, res, next) => {
-        if (req.path.startsWith('/api/')) return next();
-        res.status(503).type('html').send(buildMissingPage('hint: run "npm run build" first'));
-      });
-    }
+    console.log(`[Server] Starting in PRODUCTION mode. Serving assets from: ${distDir}`);
+    app.use(express.static(distDir));
 
     // SPA fallback: Return index.html for non-API routes
     app.get('*', (req, res) => {
@@ -2182,71 +2093,18 @@ async function startServer() {
         return res.status(404).json({ error: 'Endpoint not found' });
       }
 
-      if (!distDir) {
-        return res.status(503).type('html').send(buildMissingPage('hint: run "npm run build" first'));
-      }
-
       const indexPath = path.join(distDir, 'index.html');
       if (fs.existsSync(indexPath)) {
         res.sendFile(indexPath);
       } else {
-        res.status(503).type('html').send(buildMissingPage(`expected at: ${indexPath}`));
+        res.status(500).send(`Application build files (index.html) not found in: ${distDir}. Please ensure "npm run build" has finished.`);
       }
     });
   }
 
-  // FIX (DEPLOY): keep a reference to the raw http.Server so platform lifecycle signals
-  // (SIGTERM on Railway redeploys / teardown, SIGINT locally) shut the app down cleanly
-  // instead of a forced kill that shows up as a "Crashed" deployment.
-  const server = app.listen(PORT, '0.0.0.0', () => {
-    console.log(`🚀 Server listening on http://0.0.0.0:${PORT} (PID: ${process.pid}, mode: ${isProduction ? 'production' : 'development'})`);
+  app.listen(PORT, '0.0.0.0', () => {
+    console.log(`🚀 Server listening on http://0.0.0.0:${PORT} (PID: ${process.pid})`);
   });
-
-  // FIX (DEPLOY): graceful shutdown for Railway-style lifecycle management.
-  // Railway sends SIGTERM when a deployment is superseded or torn down; per the
-  // official "NodeJS SIGTERM handling" guidance the process must catch it, stop
-  // accepting new connections, close idle keep-alive sockets, and exit on its own.
-  let shuttingDown = false;
-  const gracefulShutdown = (signal: string) => {
-    if (shuttingDown) return;
-    shuttingDown = true;
-    console.log(`[Server] ${signal} received — starting graceful shutdown...`);
-
-    // Safety net: if something still keeps the process alive, force the exit so the
-    // platform is never left hanging.
-    const forceExitTimer = setTimeout(() => {
-      console.error('[Server] Graceful shutdown timed out — forcing exit now.');
-      process.exit(1);
-    }, 10_000);
-    forceExitTimer.unref();
-
-    // Stop accepting new connections; drop idle keep-alive sockets immediately.
-    server.close(() => {
-      clearTimeout(forceExitTimer);
-      console.log('[Server] Server closed gracefully. Bye 👋');
-      process.exit(0);
-    });
-    // Node >= 18.2: closes idle keep-alive connections so close() completes fast.
-    (server as any).closeIdleConnections?.();
-
-    // In dev mode the Vite middleware (HMR websocket + file watchers) keeps the event
-    // loop alive — close it too so the process can actually terminate.
-    if (viteServer) {
-      void viteServer.close().catch(() => {});
-    }
-
-    // Drain grace: after 3s destroy ANY remaining connection (e.g. long translation
-    // streams or a half-open socket) so shutdown stays deterministic; the 10s timer
-    // above remains the absolute backstop.
-    const destroyTimer = setTimeout(() => {
-      console.log('[Server] Destroying remaining connections to finish shutdown.');
-      (server as any).closeAllConnections?.();
-    }, 3_000);
-    destroyTimer.unref();
-  };
-
-  process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
-  process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 }
 
 startServer();
