@@ -107,31 +107,53 @@ npm run build   # Frontend + server bundle
 npm start       # Production server
 ```
 
-### Deploy the online version
+### Deploy the online version (Railway)
 
-For the hosted version, users do **not** need to run `npm run build`, `npm start`, or configure a local port. The repository owner or deployer only needs to fork the project and connect that fork to the hosting platform. The platform installs dependencies, builds the project, starts the server, and provides the public URL.
+This repository ships **Railway-ready configuration**: a `railway.json` file at the project root tells Railway exactly how to build, start, and verify the app — no manual dashboard tweaks are required. The server already listens on the platform-injected `PORT` variable and binds `0.0.0.0`, serves the built frontend with an SPA fallback, exposes `/api/health` for the deployment healthcheck, and performs a graceful shutdown on `SIGTERM`/`SIGINT` so redeploys do not appear as crashes.
 
-The online deployment should listen on the platform-provided `PORT` environment variable. For the current deployment setup, use port `8080` when the platform asks for an application port. Do not hard-code a different port in the hosting dashboard. After deployment, open the generated public domain and configure Gemini or Custom Provider from the app itself.
+**Deploy on Railway in five steps:**
 
-**Online deployment flow:**
+1. Fork the SubGame Lab repository to your GitHub account.
+2. Go to [railway.com/new](https://railway.com/new), choose **Deploy from GitHub repo**, and pick your fork. Railway builds with Railpack: it detects Node, installs dependencies, and runs `npm run build` (from `railway.json`).
+3. Open the service's **Variables** tab and add the optional variables listed below. `PORT` is injected by Railway automatically — do not set it manually, and there is no fixed port such as 8080 to configure.
+4. Deploy. Railway starts the app with `node dist/server.cjs` (a direct Node start, so the process receives `SIGTERM` and shuts down gracefully), then waits for `/api/health` to return a 2xx response before switching traffic.
+5. In **Settings → Networking → Public Networking**, click **Generate Domain** to get your `*.railway.app` URL, then open it and configure Gemini or Custom Provider inside the app.
 
-1. Fork the SubGame Lab repository.
-2. Create a new service/project on the hosting platform from your fork.
-3. Set the application port to `8080` if the platform requires a manual port setting.
-4. Let the platform run its normal install, build, and start workflow.
-5. Open the generated public URL and use the application.
+**Optional service variables:**
 
-`npm run build` is mainly for local verification or a custom deployment pipeline. It is not a step that ordinary users need to run after opening the live demo. The platform still has to build the application internally before serving it.
+| Variable | Purpose |
+| -------- | ------- |
+| `GEMINI_API_KEY` | Server-side Gemini key used when users do not provide their own. |
+| `ALLOW_SERVER_KEY` | Set to `true` to allow requests that rely on the server key. |
+| `ALLOWED_ORIGIN` | Comma-separated list of origins allowed to call the API (e.g. your `*.railway.app` domain). Leave unset to keep the open default. |
+| `AI_RATE_LIMIT` | Per-IP requests-per-minute cap on AI endpoints (default `30`, `0` disables). |
+| `GEMINI_BASE_URL` | Optional proxy/base URL for Gemini traffic. |
 
-For a custom Node.js host, use the repository's production commands only when the host does not automatically detect and run the project workflow:
+Healthcheck path (`/api/health`) and the start command are defined in `railway.json`, so Railway can verify every new deployment before going live. To redeploy, just push to your fork; to change build/start behavior, edit `railway.json` or the service settings.
 
-```bash
-npm install
-npm run build
-npm start
-```
+### Deploy on Render (alternative)
 
-The server uses the host-provided `PORT` value and falls back to `3000` only when no port is supplied. If your hosting provider assigns `8080`, the application listens on `8080`.
+The repository is equally **Render-ready**: a `render.yaml` Blueprint at the project root defines the web service, so you can deploy without filling any dashboard fields manually. The server binds `0.0.0.0:$PORT` (Render injects `PORT`, default `10000`), serves the built frontend with an SPA fallback, exposes `/api/health` (2xx within the 5-second health-check window), and performs a graceful shutdown on `SIGTERM` — far inside Render's 30-second shutdown delay — so redeploys are zero-downtime instead of crashes.
+
+**Deploy on Render in five steps:**
+
+1. Fork the SubGame Lab repository to your GitHub account.
+2. In the Render Dashboard click **New → Blueprint**, connect your fork, and Render reads `render.yaml` automatically: `npm ci && npm run build` as the build command and `node dist/server.cjs` as the start command (a direct Node start, so `SIGTERM` reaches the app).
+3. When applying the Blueprint, Render prompts you for the secret variables marked `sync: false` (`GEMINI_API_KEY`, `ALLOW_SERVER_KEY`, `ALLOWED_ORIGIN`, `GEMINI_BASE_URL`). `PORT` is injected by Render — never set it manually.
+4. Apply. Render waits for `/api/health` to return 2xx before routing traffic, then keeps checking every few seconds and auto-restarts unresponsive instances.
+5. Open the generated `*.onrender.com` URL and configure Gemini or Custom Provider inside the app.
+
+The Node.js version is pinned to `22.14.0` via the `NODE_VERSION` variable and the `.node-version` file. Note that on the Render **free plan** the service sleeps after ~15 minutes of inactivity and the first request afterwards takes a little longer while it wakes up; upgrade the plan in the dashboard to avoid cold starts.
+
+**Troubleshooting — blank (white) page after deploy:** a white page means the browser got an `index.html` that is not the production build. The server now protects you from the two classic causes: (1) the **Build Command** never ran `npm run build`, so `dist/` is missing — the server then returns a clear **503 guide page** (in Persian and English) on web routes while `/api/health` stays green, instead of silently serving the repository; and (2) misconfigured commands that run the app from TypeScript source. Verify these exact dashboard values and redeploy:
+
+| Field | Required value |
+|---|---|
+| Build Command | `npm ci && npm run build` |
+| Start Command | `node dist/server.cjs` |
+| Health Check Path | `/api/health` |
+
+Never set `NODE_ENV` manually, and never use `npm run dev` / `tsx server.ts` as a Start Command — those are local-development only. You can also check the `/api/health` response: `"static":"build"` means the built frontend is being served, `"static":"missing"` means the build output is absent. As an extra hardening, the server no longer serves the repository root, so source files such as `server.ts` or `package-lock.json` can never leak through the web server.
 
 ### Network access and privacy
 
@@ -242,31 +264,53 @@ npm start
 
 دستور اول بررسی TypeScript، دستور دوم ساخت فرانت‌اند و سرور، و دستور سوم اجرای نسخهٔ ساخته‌شده است.
 
-### استقرار نسخهٔ آنلاین
+### استقرار نسخهٔ آنلاین (Railway)
 
-برای نسخهٔ آنلاین، کاربر عادی نیازی به اجرای `npm run build`، `npm start` یا تنظیم پورت روی سیستم خودش ندارد. صاحب پروژه فقط مخزن را fork می‌کند و fork را به سرویس میزبانی متصل می‌کند. پلتفرم میزبانی نصب وابستگی‌ها، build، اجرای سرور و ساخت URL عمومی را انجام می‌دهد.
+این مخزن از قبل برای Railway آماده شده است: فایل `railway.json` در ریشهٔ پروژه به Railway می‌گوید پروژه را چطور build کند، چطور اجرا کند و سلامت آن را چطور بررسی کند — بدون هیچ تنظیم دستی در داشبورد. سرور از `PORT` تزریق‌شدهٔ پلتفرم استفاده می‌کند و روی `0.0.0.0` گوش می‌دهد، فرانت‌اند build‌شده را با SPA fallback ارائه می‌دهد، مسیر `/api/health` را برای healthcheck در اختیار می‌گذارد و هنگام `SIGTERM`/`SIGINT` خاموشی تمیز انجام می‌دهد تا ری‌دپلوی‌ها به‌صورت «Crashed» دیده نشوند.
 
-نسخهٔ آنلاین باید از مقدار پورت محیط میزبانی استفاده کند. در تنظیمات استقرار فعلی، اگر پلتفرم پورت دستی خواست، پورت `8080` را وارد کنید. پورت دیگری را در داشبورد hard-code نکنید. بعد از deploy، URL عمومی ساخته‌شده را باز کنید و Gemini یا Custom Provider را از داخل خود برنامه تنظیم کنید.
+**استقرار روی Railway در پنج گام:**
 
-**مراحل استقرار آنلاین:**
+1. مخزن SubGame Lab را در GitHub خود fork کنید.
+2. به [railway.com/new](https://railway.com/new) بروید، گزینهٔ **Deploy from GitHub repo** را انتخاب و fork را انتخاب کنید. Railway با Railpack می‌سازد: Node را تشخیص می‌دهد، وابستگی‌ها را نصب و `npm run build` را اجرا می‌کند (مطابق `railway.json`).
+3. در تب **Variables** سرویس، متغیرهای اختیاری جدول زیر را اضافه کنید. `PORT` به‌صورت خودکار توسط Railway تزریق می‌شود — آن را دستی ست نکنید و پورت ثابتی مثل 8080 هم برای تنظیم وجود ندارد.
+4. Deploy کنید. Railway برنامه را با `node dist/server.cjs` اجرا می‌کند (اجرای مستقیم Node تا سیگنال `SIGTERM` به خود برنامه برسد و خاموشی تمیز انجام شود)، سپس منتظر می‌ماند `/api/health` پاسخ 2xx بدهد و بعد ترافیک را سوئیچ می‌کند.
+5. در **Settings → Networking → Public Networking** روی **Generate Domain** بزنید تا آدرس `*.railway.app` ساخته شود، آن را باز کنید و Gemini یا Custom Provider را از داخل برنامه تنظیم کنید.
 
-1. مخزن SubGame Lab را fork کنید.
-2. در پلتفرم میزبانی یک سرویس یا پروژهٔ جدید از روی fork بسازید.
-3. اگر پلتفرم تنظیم دستی پورت دارد، پورت `8080` را وارد کنید.
-4. اجازه دهید پلتفرم روند نصب، build و اجرای پروژه را خودش انجام دهد.
-5. URL عمومی ساخته‌شده را باز کنید و از برنامه استفاده کنید.
+**متغیرهای اختیاری سرویس:**
 
-دستور `npm run build` بیشتر برای بررسی محلی یا pipeline سفارشی است. کاربر معمولی بعد از بازکردن دمو نیازی به اجرای آن ندارد. البته خود پلتفرم در پشت‌صحنه باید پروژه را build کند تا بتواند آن را ارائه دهد.
+| متغیر | کاربرد |
+| ----- | ------ |
+| `GEMINI_API_KEY` | کلید سمت سرور برای وقتی که کاربر کلید خودش ندارد. |
+| `ALLOW_SERVER_KEY` | برای اجازهٔ استفاده از کلید سرور مقدار `true` بگذارید. |
+| `ALLOWED_ORIGIN` | لیست اورجین‌های مجاز برای فراخوانی API (مثلاً دامنهٔ `*.railway.app` شما)؛ جداکننده ویرگول. اگر خالی بماند رفتار باز قبلی حفظ می‌شود. |
+| `AI_RATE_LIMIT` | سقف درخواست در دقیقه به‌ازای هر IP روی endpointهای AI (پیش‌فرض `30`، با `0` غیرفعال می‌شود). |
+| `GEMINI_BASE_URL` | پراکسی/URL پایهٔ اختیاری برای ترافیک Gemini. |
 
-برای یک سرور Node.js سفارشی، فقط وقتی این دستورات را اجرا کنید که میزبان روند پروژه را خودکار تشخیص نمی‌دهد:
+مسیر healthcheck (`/api/health`) و دستور اجرا در `railway.json` تعریف شده‌اند تا Railway هر استقرار جدید را قبل از رفتن روی ترافیک تأیید کند. برای ری‌دپلوی کافی است به fork خود push کنید؛ برای تغییر رفتار build/start فایل `railway.json` یا تنظیمات سرویس را ویرایش کنید.
 
-```bash
-npm install
-npm run build
-npm start
-```
+### استقرار روی Render (جایگزین)
 
-سرور از مقدار `PORT` که میزبان تعیین می‌کند استفاده می‌کند و فقط وقتی پورتی از محیط دریافت نکند به `3000` برمی‌گردد. بنابراین اگر میزبان `8080` اختصاص دهد، برنامه روی `8080` گوش می‌دهد.
+این مخزن برای Render هم آماده است: فایل Blueprint با نام `render.yaml` در ریشهٔ پروژه، سرویس وب را کامل تعریف می‌کند تا بدون پرکردن دستی فیلدهای داشبورد دیپلوی شود. سرور روی `0.0.0.0:$PORT` گوش می‌دهد (Render مقدار `PORT` را تزریق می‌کند؛ پیش‌فرض `10000`)، فرانت‌اند build‌شده را با SPA fallback ارائه می‌دهد، مسیر `/api/health` را در اختیار می‌گذارد (پاسخ 2xx در پنجرهٔ ۵ثانیه‌ای healthcheck) و هنگام `SIGTERM` خاموشی تمیز انجام می‌دهد — خیلی داخل مهلت ۳۰ثانیه‌ای Render — بنابراین ری‌دپلوی‌ها بدون قطعی انجام می‌شوند نه با کرش.
+
+**استقرار روی Render در پنج گام:**
+
+1. مخزن SubGame Lab را در GitHub خود fork کنید.
+2. در داشبورد Render روی **New → Blueprint** بزنید و fork را متصل کنید؛ Render فایل `render.yaml` را خودش می‌خواند: دستور build ‏`npm ci && npm run build` و دستور اجرا ‏`node dist/server.cjs` (اجرای مستقیم Node تا سیگنال `SIGTERM` به برنامه برسد).
+3. هنگام اعمال Blueprint، Render برای متغیرهای محرمانهٔ علامت‌خورده با `sync: false` (`GEMINI_API_KEY`، `ALLOW_SERVER_KEY`، `ALLOWED_ORIGIN`، `GEMINI_BASE_URL`) مقدار می‌پرسد. `PORT` توسط Render تزریق می‌شود — هرگز دستی ست نکنید.
+4. Apply کنید. Render صبر می‌کند `/api/health` پاسخ 2xx بدهد و بعد ترافیک را می‌فرستد؛ سپس هر چند ثانیه چک می‌کند و نمونهٔ بی‌پاسخ را خودکار ری‌استارت می‌کند.
+5. آدرس `*.onrender.com` ساخته‌شده را باز کنید و Gemini یا Custom Provider را از داخل برنامه تنظیم کنید.
+
+نسخهٔ Node.js با متغیر `NODE_VERSION` و فایل `.node-version` روی `22.14.0` پین شده است. توجه: در پلن رایگان Render سرویس بعد از حدود ۱۵ دقیقه بی‌کاری به خواب می‌رود و اولین درخواست بعد از آن کمی کندتر است؛ برای حذف cold start پلن را در داشبورد ارتقا دهید.
+
+**عیب‌یابی — صفحهٔ سفید بعد از دیپلوی:** صفحهٔ سفید یعنی مرورگر یک `index.html` غیر از بیلد پروداکشن گرفته است. سرور اکنون در برابر دو علتِ کلاسیک محافظت می‌شود: (۱) دستور **Build** هیچ‌وقت `npm run build` را اجرا نکرده و پوشهٔ `dist` وجود ندارد — در این حالت سرور روی مسیرهای وب یک **صفحهٔ راهنمای ۵۰۳** (فارسی/انگلیسی) برمی‌گرداند و `/api/health` سبز می‌ماند، به‌جای آن‌که بی‌صدا ریشهٔ مخزن را سرو کند؛ و (۲) دستورهای اشتباهی که برنامه را از سورس TypeScript اجرا می‌کنند. این مقادیر دقیق را در داشبورد بررسی و دوباره Deploy کنید:
+
+| فیلد | مقدار الزامی |
+|---|---|
+| Build Command | `npm ci && npm run build` |
+| Start Command | `node dist/server.cjs` |
+| Health Check Path | `/api/health` |
+
+هرگز `NODE_ENV` را دستی تنظیم نکنید و هرگز `npm run dev` یا `tsx server.ts` را به‌عنوان Start Command استفاده نکنید — این‌ها فقط برای توسعهٔ محلی‌اند. پاسخ `/api/health` هم راهنمای تشخیص است: `"static":"build"` یعنی فرانت‌اند بیلدشده سرو می‌شود و `"static":"missing"` یعنی خروجی بیلد روی سرور نیست. به‌عنوان سخت‌سازی امنیتی، سرور دیگر ریشهٔ مخزن را سرو نمی‌کند؛ بنابراین فایل‌هایی مثل `server.ts` یا `package-lock.json` هرگز از طریق وب لو نمی‌روند.
 
 ### شبکه و حریم خصوصی
 
@@ -371,31 +415,53 @@ npm start
 
 الأول لفحص TypeScript، والثاني لبناء الواجهة والخادم، والثالث لتشغيل نسخة الإنتاج.
 
-### نشر النسخة الإلكترونية
+### نشر النسخة الإلكترونية (Railway)
 
-في النسخة الإلكترونية، لا يحتاج المستخدم العادي إلى تشغيل `npm run build` أو `npm start` أو ضبط منفذ على جهازه. يقوم صاحب المشروع بعمل fork للمستودع وربطه بمنصة الاستضافة. تتولى المنصة تثبيت الاعتماديات وبناء المشروع وتشغيل الخادم وإنشاء الرابط العام.
+هذا المستودع جاهز مسبقاً للنشر على Railway: ملف `railway.json` في جذر المشروع يخبر Railway بكيفية بناء التطبيق وتشغيله والتحقق من صحته دون أي إعداد يدوي في لوحة التحكم. يستمع الخادم إلى منفذ `PORT` الذي تحقنه المنصة ويربط نفسه بـ `0.0.0.0`، ويقدّم الواجهة المبنية مع SPA fallback، ويوفّر المسار `/api/health` لفحص الصحة، وينفّذ إيقافاً نظيفاً عند استقبال `SIGTERM`/`SIGINT` حتى لا تظهر عمليات إعادة النشر كأعطال.
 
-يجب أن يستمع النشر الإلكتروني إلى قيمة `PORT` التي توفرها منصة الاستضافة. في إعداد النشر الحالي، استخدم المنفذ `8080` إذا طلبت المنصة ضبط منفذ يدوياً. لا تضع منفذاً مختلفاً بشكل ثابت في لوحة الاستضافة. بعد النشر، افتح الرابط العام واضبط Gemini أو Custom Provider من داخل التطبيق.
+**خطوات النشر على Railway:**
 
-**خطوات النشر الإلكتروني:**
+1. اعمل fork لمستودع SubGame Lab في حسابك على GitHub.
+2. انتقل إلى [railway.com/new](https://railway.com/new) واختر **Deploy from GitHub repo** ثم اختر الـ fork. سيبني Railway باستخدام Railpack: يكتشف Node، يثبّت الاعتماديات، ثم يشغّل `npm run build` (وفق `railway.json`).
+3. في تبويب **Variables** الخاص بالخدمة أضف المتغيرات الاختيارية المذكورة أدناه. يتم حقن `PORT` تلقائياً — لا تضبطه يدوياً ولا يوجد منفذ ثابت مثل 8080 يحتاج إلى إعداد.
+4. اضغط Deploy. سيشغّل Railway التطبيق بالأمر `node dist/server.cjs` (تشغيل مباشر لـ Node ليصل إشارة `SIGTERM` إلى التطبيق فيتم الإيقاف بنجاح)، ثم ينتظر حتى يرد `/api/health` برمز 2xx قبل تحويل الزيارات.
+5. من **Settings → Networking → Public Networking** اضغط **Generate Domain** للحصول على رابط `*.railway.app`، ثم افتحه واضبط Gemini أو Custom Provider من داخل التطبيق.
 
-1. اعمل fork لمستودع SubGame Lab.
-2. أنشئ خدمة أو مشروعاً جديداً من الـ fork في منصة الاستضافة.
-3. إذا كانت المنصة تطلب منفذاً يدوياً، أدخل `8080`.
-4. اترك المنصة تنفذ التثبيت والبناء والتشغيل تلقائياً.
-5. افتح الرابط العام الناتج واستخدم التطبيق.
+**متغيرات الخدمة الاختيارية:**
 
-يُستخدم الأمر `npm run build` أساساً للتحقق المحلي أو لخط نشر مخصص. لا يحتاج المستخدم العادي إلى تشغيله بعد فتح العرض المباشر، لكن منصة الاستضافة تنفذ البناء داخلياً قبل تقديم التطبيق.
+| المتغير | الوظيفة |
+| ------- | ------- |
+| `GEMINI_API_KEY` | مفتاح Gemini على الخادم للاستخدام عندما لا يوفّر المستخدم مفتاحه. |
+| `ALLOW_SERVER_KEY` | ضع القيمة `true` للسماح بالاعتماد على مفتاح الخادم. |
+| `ALLOWED_ORIGIN` | قائمة الأصول المسموح لها باستدعاء API مفصولة بفواصل (مثل نطاق `*.railway.app`). إن تُركت فارغة يبقى السلوك المفتوح السابق. |
+| `AI_RATE_LIMIT` | حد الطلبات في الدقيقة لكل IP على نقاط AI (الافتراضي `30`، و`0` يعطّله). |
+| `GEMINI_BASE_URL` | بروكسي/عنوان أساسي اختياري لطلبات Gemini. |
 
-على مضيف Node.js مخصص، استخدم الأوامر التالية فقط عندما لا يكتشف المضيف سير عمل المشروع تلقائياً:
+مسار فحص الصحة (`/api/health`) وأمر التشغيل معرّفان في `railway.json` بحيث يتحقق Railway من كل نشر جديد قبل توجيه الزيارات إليه. لإعادة النشر يكفي الدفع (push) إلى الـ fork؛ ولتغيير سلوك البناء/التشغيل عدّل ملف `railway.json` أو إعدادات الخدمة.
 
-```bash
-npm install
-npm run build
-npm start
-```
+### النشر على Render (بديل)
 
-يستخدم الخادم قيمة `PORT` التي يحددها المضيف، ويعود إلى `3000` فقط عندما لا تصله قيمة منفذ. إذا خصص المضيف `8080` فسيستمع التطبيق على `8080`.
+المستودع جاهز بنفس الدرجة للنشر على Render: ملف Blueprint باسم `render.yaml` في جذر المشروع يعرّف خدمة الويب بالكامل، فتتمكن من النشر دون تعبئة حقول لوحة التحكم يدوياً. يستمع الخادم إلى `0.0.0.0:$PORT` (تحقن Render قيمة `PORT`؛ الافتراضي `10000`)، ويقدّم الواجهة المبنية مع SPA fallback، ويوفّر المسار `/api/health` (رد 2xx خلال نافذة فحص الصحة التي تبلغ 5 ثوانٍ)، وينفّذ إيقافاً نظيفاً عند `SIGTERM` — ضمن مهلة الإيقاف التي تبلغ 30 ثانية بكثير — فتصبح عمليات إعادة النشر دون انقطاع بدل الأعطال.
+
+**خطوات النشر على Render:**
+
+1. اعمل fork لمستودع SubGame Lab في حسابك على GitHub.
+2. في لوحة تحكم Render اضغط **New → Blueprint** واربط الـ fork؛ سيقرأ Render ملف `render.yaml` تلقائياً: أمر البناء `npm ci && npm run build` وأمر التشغيل `node dist/server.cjs` (تشغيل مباشر لـ Node ليصل إشارة `SIGTERM` إلى التطبيق).
+3. عند تطبيق الـ Blueprint ستسأل Render عن المتغيرات السرية المعلّمة بـ `sync: false` (`GEMINI_API_KEY` و`ALLOW_SERVER_KEY` و`ALLOWED_ORIGIN` و`GEMINI_BASE_URL`). يتم حقن `PORT` تلقائياً — لا تضبطه يدوياً أبداً.
+4. اضغط Apply. ينتظر Render حتى يرد `/api/health` برمز 2xx قبل توجيه الزيارات، ثم يفحص كل بضع ثوانٍ ويعيد تشغيل النسخ غير المستجيبة تلقائياً.
+5. افتح رابط `*.onrender.com` الناتج واضبط Gemini أو Custom Provider من داخل التطبيق.
+
+نسخة Node.js مثبّتة على `22.14.0` عبر متغير `NODE_VERSION` وملف `.node-version`. ملاحظة: في الخطة المجانية من Render تدخل الخدمة في وضع السكون بعد نحو 15 دقيقة من الخمول ويصبح الطلب الأول بعدها أبطأ قليلاً؛ قم بترقية الخطة لتجنب ذلك.
+
+**استكشاف الأخطاء — صفحة بيضاء بعد النشر:** الصفحة البيضاء تعني أن المتصفح استلم ملف `index.html` ليس من بناء الإنتاج. الخادم الآن محمي من السببين الكلاسيكيين: (1) أمر **البناء** لم ينفّذ `npm run build` أبداً فتكون مجلد `dist` مفقوداً — عندها يُرجع الخادم **صفحة إرشادية 503** (بالفارسية والإنجليزية) على مسارات الويب بينما يبقى `/api/health` سليماً، بدلاً من تقديم جذر المستودع بصمت؛ و(2) أوامر خاطئة تشغّل التطبيق من مصدر TypeScript مباشرة. تحقق من هذه القيم في لوحة التحكم ثم أعد النشر:
+
+| الحقل | القيمة المطلوبة |
+|---|---|
+| Build Command | `npm ci && npm run build` |
+| Start Command | `node dist/server.cjs` |
+| Health Check Path | `/api/health` |
+
+لا تضبط `NODE_ENV` يدوياً أبداً، ولا تستخدم `npm run dev` أو `tsx server.ts` كأمر تشغيل — فهي للتطوير المحلي فقط. يفيدك رد `/api/health` في التشخيص أيضاً: `"static":"build"` تعني أن الواجهة المبنية تُقدَّم، و`"static":"missing"` تعني غياب مخرجات البناء على الخادم. وكتحصين إضافي، لم يعد الخادم يقدّم جذر المستودع، لذلك لا يمكن أبداً تسريب ملفات مثل `server.ts` أو `package-lock.json` عبر الويب.
 
 ### الشبكة والخصوصية
 
