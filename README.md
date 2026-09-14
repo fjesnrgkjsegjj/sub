@@ -131,6 +131,20 @@ This repository ships **Railway-ready configuration**: a `railway.json` file at 
 
 Healthcheck path (`/api/health`) and the start command are defined in `railway.json`, so Railway can verify every new deployment before going live. To redeploy, just push to your fork; to change build/start behavior, edit `railway.json` or the service settings.
 
+### Deploy on Render (alternative)
+
+The repository is equally **Render-ready**: a `render.yaml` Blueprint at the project root defines the web service, so you can deploy without filling any dashboard fields manually. The server binds `0.0.0.0:$PORT` (Render injects `PORT`, default `10000`), serves the built frontend with an SPA fallback, exposes `/api/health` (2xx within the 5-second health-check window), and performs a graceful shutdown on `SIGTERM` — far inside Render's 30-second shutdown delay — so redeploys are zero-downtime instead of crashes.
+
+**Deploy on Render in five steps:**
+
+1. Fork the SubGame Lab repository to your GitHub account.
+2. In the Render Dashboard click **New → Blueprint**, connect your fork, and Render reads `render.yaml` automatically: `npm ci && npm run build` as the build command and `node dist/server.cjs` as the start command (a direct Node start, so `SIGTERM` reaches the app).
+3. When applying the Blueprint, Render prompts you for the secret variables marked `sync: false` (`GEMINI_API_KEY`, `ALLOW_SERVER_KEY`, `ALLOWED_ORIGIN`, `GEMINI_BASE_URL`). `PORT` is injected by Render — never set it manually.
+4. Apply. Render waits for `/api/health` to return 2xx before routing traffic, then keeps checking every few seconds and auto-restarts unresponsive instances.
+5. Open the generated `*.onrender.com` URL and configure Gemini or Custom Provider inside the app.
+
+The Node.js version is pinned to `22.14.0` via the `NODE_VERSION` variable and the `.node-version` file. Note that on the Render **free plan** the service sleeps after ~15 minutes of inactivity and the first request afterwards takes a little longer while it wakes up; upgrade the plan in the dashboard to avoid cold starts.
+
 ### Network access and privacy
 
 API calls are sent by the application server. For a hosted deployment, the server must reach the selected provider; for local development, your local Node.js process must reach it. Proxy/VPN requirements depend on routing and provider restrictions: the hosted demo does not guarantee access in every region. Use services available to you under their terms; multiple keys do not remove provider quotas.
@@ -264,6 +278,20 @@ npm start
 
 مسیر healthcheck (`/api/health`) و دستور اجرا در `railway.json` تعریف شده‌اند تا Railway هر استقرار جدید را قبل از رفتن روی ترافیک تأیید کند. برای ری‌دپلوی کافی است به fork خود push کنید؛ برای تغییر رفتار build/start فایل `railway.json` یا تنظیمات سرویس را ویرایش کنید.
 
+### استقرار روی Render (جایگزین)
+
+این مخزن برای Render هم آماده است: فایل Blueprint با نام `render.yaml` در ریشهٔ پروژه، سرویس وب را کامل تعریف می‌کند تا بدون پرکردن دستی فیلدهای داشبورد دیپلوی شود. سرور روی `0.0.0.0:$PORT` گوش می‌دهد (Render مقدار `PORT` را تزریق می‌کند؛ پیش‌فرض `10000`)، فرانت‌اند build‌شده را با SPA fallback ارائه می‌دهد، مسیر `/api/health` را در اختیار می‌گذارد (پاسخ 2xx در پنجرهٔ ۵ثانیه‌ای healthcheck) و هنگام `SIGTERM` خاموشی تمیز انجام می‌دهد — خیلی داخل مهلت ۳۰ثانیه‌ای Render — بنابراین ری‌دپلوی‌ها بدون قطعی انجام می‌شوند نه با کرش.
+
+**استقرار روی Render در پنج گام:**
+
+1. مخزن SubGame Lab را در GitHub خود fork کنید.
+2. در داشبورد Render روی **New → Blueprint** بزنید و fork را متصل کنید؛ Render فایل `render.yaml` را خودش می‌خواند: دستور build ‏`npm ci && npm run build` و دستور اجرا ‏`node dist/server.cjs` (اجرای مستقیم Node تا سیگنال `SIGTERM` به برنامه برسد).
+3. هنگام اعمال Blueprint، Render برای متغیرهای محرمانهٔ علامت‌خورده با `sync: false` (`GEMINI_API_KEY`، `ALLOW_SERVER_KEY`، `ALLOWED_ORIGIN`، `GEMINI_BASE_URL`) مقدار می‌پرسد. `PORT` توسط Render تزریق می‌شود — هرگز دستی ست نکنید.
+4. Apply کنید. Render صبر می‌کند `/api/health` پاسخ 2xx بدهد و بعد ترافیک را می‌فرستد؛ سپس هر چند ثانیه چک می‌کند و نمونهٔ بی‌پاسخ را خودکار ری‌استارت می‌کند.
+5. آدرس `*.onrender.com` ساخته‌شده را باز کنید و Gemini یا Custom Provider را از داخل برنامه تنظیم کنید.
+
+نسخهٔ Node.js با متغیر `NODE_VERSION` و فایل `.node-version` روی `22.14.0` پین شده است. توجه: در پلن رایگان Render سرویس بعد از حدود ۱۵ دقیقه بی‌کاری به خواب می‌رود و اولین درخواست بعد از آن کمی کندتر است؛ برای حذف cold start پلن را در داشبورد ارتقا دهید.
+
 ### شبکه و حریم خصوصی
 
 درخواست‌های API از سمت سرور برنامه ارسال می‌شوند. در نسخهٔ میزبانی‌شده، سرور باید به سرویس انتخابی دسترسی داشته باشد؛ در نسخهٔ محلی، Node.js روی سیستم شما باید به آن سرویس برسد. نیاز به پراکسی یا ابزار مسیریابی به محدودیت سرویس و شبکه بستگی دارد؛ دمو آنلاین دسترسی در همهٔ مناطق را تضمین نمی‌کند. از سرویس‌ها مطابق شرایط استفادهٔ خودشان بهره ببرید؛ چند کلید سهمیهٔ ارائه‌دهنده را حذف نمی‌کند.
@@ -390,6 +418,20 @@ npm start
 | `GEMINI_BASE_URL` | بروكسي/عنوان أساسي اختياري لطلبات Gemini. |
 
 مسار فحص الصحة (`/api/health`) وأمر التشغيل معرّفان في `railway.json` بحيث يتحقق Railway من كل نشر جديد قبل توجيه الزيارات إليه. لإعادة النشر يكفي الدفع (push) إلى الـ fork؛ ولتغيير سلوك البناء/التشغيل عدّل ملف `railway.json` أو إعدادات الخدمة.
+
+### النشر على Render (بديل)
+
+المستودع جاهز بنفس الدرجة للنشر على Render: ملف Blueprint باسم `render.yaml` في جذر المشروع يعرّف خدمة الويب بالكامل، فتتمكن من النشر دون تعبئة حقول لوحة التحكم يدوياً. يستمع الخادم إلى `0.0.0.0:$PORT` (تحقن Render قيمة `PORT`؛ الافتراضي `10000`)، ويقدّم الواجهة المبنية مع SPA fallback، ويوفّر المسار `/api/health` (رد 2xx خلال نافذة فحص الصحة التي تبلغ 5 ثوانٍ)، وينفّذ إيقافاً نظيفاً عند `SIGTERM` — ضمن مهلة الإيقاف التي تبلغ 30 ثانية بكثير — فتصبح عمليات إعادة النشر دون انقطاع بدل الأعطال.
+
+**خطوات النشر على Render:**
+
+1. اعمل fork لمستودع SubGame Lab في حسابك على GitHub.
+2. في لوحة تحكم Render اضغط **New → Blueprint** واربط الـ fork؛ سيقرأ Render ملف `render.yaml` تلقائياً: أمر البناء `npm ci && npm run build` وأمر التشغيل `node dist/server.cjs` (تشغيل مباشر لـ Node ليصل إشارة `SIGTERM` إلى التطبيق).
+3. عند تطبيق الـ Blueprint ستسأل Render عن المتغيرات السرية المعلّمة بـ `sync: false` (`GEMINI_API_KEY` و`ALLOW_SERVER_KEY` و`ALLOWED_ORIGIN` و`GEMINI_BASE_URL`). يتم حقن `PORT` تلقائياً — لا تضبطه يدوياً أبداً.
+4. اضغط Apply. ينتظر Render حتى يرد `/api/health` برمز 2xx قبل توجيه الزيارات، ثم يفحص كل بضع ثوانٍ ويعيد تشغيل النسخ غير المستجيبة تلقائياً.
+5. افتح رابط `*.onrender.com` الناتج واضبط Gemini أو Custom Provider من داخل التطبيق.
+
+نسخة Node.js مثبّتة على `22.14.0` عبر متغير `NODE_VERSION` وملف `.node-version`. ملاحظة: في الخطة المجانية من Render تدخل الخدمة في وضع السكون بعد نحو 15 دقيقة من الخمول ويصبح الطلب الأول بعدها أبطأ قليلاً؛ قم بترقية الخطة لتجنب ذلك.
 
 ### الشبكة والخصوصية
 
